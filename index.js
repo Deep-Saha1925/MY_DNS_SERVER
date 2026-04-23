@@ -1,5 +1,5 @@
 // Creating a UDP service
-const dgram = require('node:drgam');
+const dgram = require('dgram');
 
 const server = dgram.createSocket('udp4')
 
