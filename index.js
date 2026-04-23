@@ -1,57 +1,68 @@
-// Creating a UDP service
 const dgram = require('dgram');
 const dnsPacket = require('dns-packet');
 
 const server = dgram.createSocket('udp4');
 
 const db = {
-    'test.dev': {
-        type: 'A',
-        data: '1.2.3.4'
-    },
-    'xyz.com': {
-        type: 'CNAME',
-        data: 'hashnode.dev'
-    }
-}
+    'test.dev': [
+        { type: 'A', data: '1.2.3.4' }
+    ],
+    'xyz.com': [
+        { type: 'CNAME', data: 'hashnode.dev' }
+    ]
+};
 
 server.on('message', (msg, rinfo) => {
     const incomingReq = dnsPacket.decode(msg);
-    const domain = incomingReq.questions[0].name;
 
-    const ipFromDB = db[domain];
+    const questions = incomingReq.questions || [];
+    const answers = [];
 
-    if (!ipFromDB) {
-        console.log(`Domain not found: ${domain}`);
+    for (let q of questions) {
+        const domain = q.name;
 
-        // Send empty response (no answers)
-        const response = dnsPacket.encode({
-            type: 'response',
-            id: incomingReq.id,
-            flags: dnsPacket.RECURSION_DESIRED,
-            questions: incomingReq.questions,
-            answers: []
-        });
+        // 🔇 Ignore reverse DNS noise
+        if (domain.endsWith('in-addr.arpa')) continue;
 
-        return server.send(response, rinfo.port, rinfo.address);
+        const records = db[domain];
+
+        if (!records) {
+            console.log(`Domain not found: ${domain}`);
+            continue;
+        }
+
+        // Add all records from DB (A, CNAME, etc.)
+        for (let record of records) {
+            answers.push({
+                type: record.type,
+                class: 'IN',
+                name: domain,
+                ttl: 300, // good practice
+                data: record.data
+            });
+        }
     }
 
-    const ans = dnsPacket.encode({
+    const response = dnsPacket.encode({
         type: 'response',
         id: incomingReq.id,
-        flags: dnsPacket.AUTHORITATIVE_ANSWER,
-        questions: incomingReq.questions,
-        answers: [{
-            type: ipFromDB.type,
-            class: 'IN',
-            name: domain,
-            data: ipFromDB.data
-        }]
+
+        // ✅ Proper flags
+        flags:
+            dnsPacket.AUTHORITATIVE_ANSWER |
+            dnsPacket.RECURSION_DESIRED |
+            dnsPacket.RECURSION_AVAILABLE,
+
+        questions: questions,
+        answers: answers
     });
 
-    server.send(ans, rinfo.port, rinfo.address);
+    server.send(response, rinfo.port, rinfo.address);
 });
 
-server.bind(53, () => {
-    console.log('DNS server running on port 53')
-})
+server.on('listening', () => {
+    const addr = server.address();
+    console.log(`DNS server running on ${addr.address}:${addr.port}`);
+});
+
+server.bind(53);
