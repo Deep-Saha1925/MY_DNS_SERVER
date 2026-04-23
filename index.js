@@ -4,7 +4,11 @@ const dgram = require('dgram');
 const server = dgram.createSocket('udp4')
 
 server.on('message', (msg, rinfo) => {
-    console.log('Incoming msg', msg.toString());
+    //console.log('Incoming msg', msg.toString());
+    console.log({
+        msg: msg.toString(),
+        rinfo
+    });
 })
 
 server.bind(53, () => {
